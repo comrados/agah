@@ -4,7 +4,7 @@ from models.basic_module import BasicModule
 
 
 class AGAH(BasicModule):
-    def __init__(self, bit, y_dim, num_label, emb_dim, hidden_dim, lambd=0.8, pretrain_model=None):
+    def __init__(self, bit, x_dim, y_dim, num_label, feature_dim, hidden_dim, lambd=0.8, pretrain_model=None):
         super(AGAH, self).__init__()
         self.module_name = 'AGAH'
         self.bit = bit
@@ -63,62 +63,72 @@ class AGAH(BasicModule):
         )
         """
 
-        class Identity(nn.Module):
+        class Unsqueezer(nn.Module):
+            """
+            Converts 2d input into 4d input for Conv2d layers
+            """
             def __init__(self):
-                super(Identity, self).__init__()
+                super(Unsqueezer, self).__init__()
 
             def forward(self, x):
-                x = x.unsqueeze(-1)
-                return x.unsqueeze(-1)
+                return x.unsqueeze(1).unsqueeze(-1)
 
-        self.img_module = nn.Sequential(Identity())
+        self.img_module = nn.Sequential(
+            Unsqueezer(),
+            nn.Conv2d(1, hidden_dim, kernel_size=(x_dim, 1), stride=(1, 1)),
+            nn.ReLU(True),
+            nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=1, stride=(1, 1)),
+            nn.ReLU(True),
+            nn.Conv2d(hidden_dim // 2, feature_dim, 1),
+            nn.ReLU(True)
+        )
 
         self.txt_module = nn.Sequential(
-            nn.Conv2d(1, 4096, kernel_size=(y_dim, 1), stride=(1, 1)),
+            nn.Conv2d(1, hidden_dim, kernel_size=(y_dim, 1), stride=(1, 1)),
             nn.ReLU(True),
-            nn.Conv2d(4096, 4096, kernel_size=1, stride=(1, 1)),
+            nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=1, stride=(1, 1)),
             nn.ReLU(True),
-            nn.Conv2d(4096, emb_dim, 1),
+            nn.Conv2d(hidden_dim // 2, feature_dim, 1),
             nn.ReLU(True)
         )
 
         self.hash_module = nn.ModuleDict({
             'img': nn.Sequential(
-                nn.Conv2d(emb_dim, bit, 1),
+                nn.Conv2d(feature_dim, bit, 1),
                 nn.Tanh()
             ),
             'txt': nn.Sequential(
-                nn.Conv2d(emb_dim, bit, 1),
+                nn.Conv2d(feature_dim, bit, 1),
                 nn.Tanh()
             )
         })
 
         self.classifier = nn.ModuleDict({
             'img': nn.Sequential(
-                nn.Conv2d(emb_dim, num_label, 1),
+                nn.Conv2d(feature_dim, num_label, 1),
                 nn.Sigmoid()
             ),
             'txt': nn.Sequential(
-                nn.Conv2d(emb_dim, num_label, 1),
+                nn.Conv2d(feature_dim, num_label, 1),
                 nn.Sigmoid()
             ),
         })
 
         self.img_discriminator = nn.Sequential(
-            nn.Conv2d(1, emb_dim, kernel_size=(emb_dim, 1)),
+            nn.Conv2d(1, feature_dim, kernel_size=(feature_dim, 1)),
             nn.ReLU(True),
 
-            nn.Conv2d(emb_dim, 256, 1),
+            nn.Conv2d(feature_dim, 256, 1),
             nn.ReLU(True),
 
             nn.Conv2d(256, 1, 1)
         )
 
         self.txt_discriminator = nn.Sequential(
-            nn.Conv2d(1, emb_dim, kernel_size=(emb_dim, 1)),
+            nn.Conv2d(1, feature_dim, kernel_size=(feature_dim, 1)),
             nn.ReLU(True),
 
-            nn.Conv2d(emb_dim, 256, 1),
+            nn.Conv2d(feature_dim, 256, 1),
             nn.ReLU(True),
 
             nn.Conv2d(256, 1, 1)

@@ -115,9 +115,9 @@ class TripletAllLoss(nn.Module):
         if t_labels is None:
             t_labels = s_labels
 
-        if self.dis_metric is 'euclidean':
+        if self.dis_metric == 'euclidean':
             pairwise_dist = _euclidean_distances(source, target, self.squared)
-        elif self.dis_metric is 'cos':
+        elif self.dis_metric == 'cos':
             pairwise_dist = _cos_distance(source, target)
 
         # shape (batch_size, batch_size, 1)
@@ -129,7 +129,7 @@ class TripletAllLoss(nn.Module):
         # triplet_loss[i, j, k] will contain the triplet loss of anchor=i, positive=j, negative=k
         # Uses broadcasting where the 1st argument has shape (batch_size, batch_size, 1)
         # and the 2nd (batch_size, 1, batch_size)
-        if self.dis_metric is 'euclidean':
+        if self.dis_metric == 'euclidean':
             triplet_loss = anchor_positive_dist - (1 - margin) * anchor_negative_dist
         else:
             triplet_loss = anchor_positive_dist - anchor_negative_dist + margin
@@ -207,9 +207,9 @@ class TripletHardLoss(nn.Module):
         triplet_loss = torch.clamp(hardest_positive_dist - hardest_negative_dist + margin, 0.0)
 
         # Get final mean triplet loss
-        if self.reduction is 'mean':
+        if self.reduction == 'mean':
             triplet_loss = triplet_loss.mean()
-        elif self.reduction is 'sum':
+        elif self.reduction == 'sum':
             triplet_loss = triplet_loss.sum()
 
         return triplet_loss

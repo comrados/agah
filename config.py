@@ -18,6 +18,7 @@ class DefaultConfig(object):
     db_size = 9450
     num_label = 21
     tag_dim = 266
+    img_dim = 4096
     query_size = 1050
 
     # for flickr25k dataset
@@ -38,24 +39,24 @@ class DefaultConfig(object):
 
     training_size = 9450
     batch_size = 128
-    emb_dim = 4096
     hidden_dim = 2048
+    emb_dim = hidden_dim // 4
 
     valid = True  # whether to use validation
     valid_freq = 1
-    max_epoch = 300
+    max_epoch = 100
 
-    bit = 64  # final binary code length
+    bit = 32  # final binary code length
     lr = 0.0001  # initial learning rate
 
     device = 'cuda:0'  # 'cuda:0'  # if `device` is not None then use cpu for default
 
     # hyper-parameters
     alpha = 1
-    beta = 1
-    gamma = 0.001
-    eta = 1
-    mu = 1
+    beta = 0.1
+    gamma = 0.00001
+    eta = 0.01
+    mu = 100
     delta = 0.5
 
     lambd = 0.8

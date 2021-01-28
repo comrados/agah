@@ -57,7 +57,7 @@ def train(**kwargs):
 
     pretrain_model = None
 
-    model = AGAH(opt.bit, opt.tag_dim, opt.num_label, opt.emb_dim, opt.hidden_dim, lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
+    model = AGAH(opt.bit, opt.img_dim, opt.tag_dim, opt.num_label, opt.emb_dim, opt.hidden_dim, lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
 
     #load_model(model, opt.load_model_path)
 
@@ -81,6 +81,7 @@ def train(**kwargs):
 
     max_mapi2t = 0.
     max_mapt2i = 0.
+    max_average = 0.
 
     FEATURE_I = torch.randn(opt.training_size, opt.emb_dim).to(opt.device)
     FEATURE_T = torch.randn(opt.training_size, opt.emb_dim).to(opt.device)
@@ -103,6 +104,7 @@ def train(**kwargs):
         e_losses = {'class': 0, 'code_map': 0, 'quant': 0, 'adver': 0, '1': 0, '2': 0, '3': 0}
         # for i, (ind, x, y, l) in tqdm(enumerate(train_dataloader)):
         for i, (ind, x, y, l) in enumerate(train_dataloader):
+            t2 = time.time()
             imgs = x.to(opt.device)
             tags = y.to(opt.device)
             labels = l.to(opt.device)
@@ -110,6 +112,8 @@ def train(**kwargs):
             batch_size = len(ind)
 
             h_x, h_y, f_x, f_y, x_class, y_class = model(imgs, tags, FEATURE_MAP)
+
+            t_fwd = time.time()
 
             FEATURE_I[ind] = f_x.data
             FEATURE_T[ind] = f_y.data
@@ -134,15 +138,13 @@ def train(**kwargs):
             interpolates = alpha * f_y.detach() + (1 - alpha) * f_x.detach()
             interpolates.requires_grad_()
             disc_interpolates = model.dis_txt(interpolates)
-            gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-                                      grad_outputs=torch.ones(disc_interpolates.size()).to(opt.device),
-                                      create_graph=True, retain_graph=True, only_inputs=True)[0]
+            gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates, grad_outputs=torch.ones(disc_interpolates.size()).to(opt.device), create_graph=True, retain_graph=True, only_inputs=True)[0]
             gradients = gradients.view(gradients.size(0), -1)
             # 10 is gradient penalty hyperparameter
             txt_gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * 10
             txt_gradient_penalty.backward()
 
-            loss_D_txt = D_txt_real - D_txt_fake
+            # loss_D_txt = D_txt_real - D_txt_fake
             optimizer_dis['txt'].step()
 
             #####
@@ -163,16 +165,16 @@ def train(**kwargs):
             interpolates = alpha * f_x.detach() + (1 - alpha) * f_y.detach()
             interpolates.requires_grad_()
             disc_interpolates = model.dis_img(interpolates)
-            gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-                                      grad_outputs=torch.ones(disc_interpolates.size()).to(opt.device),
-                                      create_graph=True, retain_graph=True, only_inputs=True)[0]
+            gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates, grad_outputs=torch.ones(disc_interpolates.size()).to(opt.device), create_graph=True, retain_graph=True, only_inputs=True)[0]
             gradients = gradients.view(gradients.size(0), -1)
             # 10 is gradient penalty hyperparameter
             img_gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * 10
             img_gradient_penalty.backward()
 
-            loss_D_img = D_img_real - D_img_fake
+            # loss_D_img = D_img_real - D_img_fake
             optimizer_dis['img'].step()
+
+            t_dis = time.time()
 
             #####
             # train generators
@@ -218,6 +220,7 @@ def train(**kwargs):
             optimizer.step()
 
             e_loss = err + e_loss
+            # print('It: complete = {:3.3f}s, fwd = {:3.3f}s, dis = {:3.3f}s, rest = {:3.3f}s'.format(time.time() - t2, t_fwd - t2, t_dis - t_fwd, time.time() - t_dis))
 
         loss.append(e_loss.item())
         e_losses['sum'] = sum(e_losses.values())
@@ -248,15 +251,18 @@ def train(**kwargs):
                 }
                 vis.plot_many(d)
 
-            if mapt2i >= max_mapt2i and mapi2t >= max_mapi2t:
+            if 0.5 * (mapi2t + mapt2i) > max_average:
                 max_mapi2t = mapi2t
                 max_mapt2i = mapt2i
+                max_average = 0.5 * (mapi2t + mapt2i)
                 save_model(model)
                 path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
                 with torch.cuda.device(opt.device):
-                    torch.save(FEATURE_MAP, os.path.join(path, 'feature_map.pth'))
+                    torch.save([FEATURE_MAP, FEATURE_I, FEATURE_T], os.path.join(path, 'feature_maps_fm_i_t.pth'))
+                with torch.cuda.device(opt.device):
+                    torch.save([CODE_MAP, U, V], os.path.join(path, 'code_maps_cm_u_v.pth'))
 
-        if epoch % 100 == 0:
+        if epoch % 50 == 0:
             for params in optimizer.param_groups:
                 params['lr'] = max(params['lr'] * 0.6, 1e-6)
 
@@ -274,7 +280,7 @@ def train(**kwargs):
 
     path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     with open(os.path.join(path, 'result.pkl'), 'wb') as f:
-        pickle.dump([train_times, mapi2t_list, mapt2i_list], f)
+        pickle.dump([train_times, mapi2t_list, mapt2i_list, losses], f)
 
 
 def update_code_map(U, V, M, L):
@@ -296,11 +302,11 @@ def update_code_map(U, V, M, L):
 
 
 def update_feature_map(FEAT_I, FEAT_T, L, mode='average'):
-    if mode is 'average':
+    if mode == 'average':
         feature_map_I = L.t().mm(FEAT_I) / L.sum(dim=0).unsqueeze(-1)
         feature_map_T = L.t().mm(FEAT_T) / L.sum(dim=0).unsqueeze(-1)
     else:
-        assert mode is 'max'
+        assert mode == 'max'
         feature_map_I = (L.t().unsqueeze(-1) * FEAT_I).max(dim=1)[0]
         feature_map_T = (L.t().unsqueeze(-1) * FEAT_T).max(dim=1)[0]
 
@@ -335,14 +341,14 @@ def test(**kwargs):
     else:
         opt.device = torch.device('cpu')
 
-    pretrain_model = load_pretrain_model(opt.pretrain_model_path)
+    # pretrain_model = load_pretrain_model(opt.pretrain_model_path)
+    pretrain_model = None
 
-    model = AGAH(opt.bit, opt.tag_dim, opt.num_label, opt.emb_dim,
-                lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
+    model = AGAH(opt.bit, opt.img_dim, opt.tag_dim, opt.num_label, opt.emb_dim, opt.hidden_dim, lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
 
     path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     load_model(model, path)
-    FEATURE_MAP = torch.load(os.path.join(path, 'feature_map.pth')).to(opt.device)
+    FEATURE_MAP = torch.load(os.path.join(path, 'feature_maps_fm_i_t.pth'))[0].to(opt.device)
 
     model.eval()
 
@@ -384,7 +390,7 @@ def test(**kwargs):
 
     mapi2t = calc_map_k(qBX, rBY, query_labels, db_labels)
     mapt2i = calc_map_k(qBY, rBX, query_labels, db_labels)
-    print('...test MAP: MAP(i->t): %3.4f, MAP(t->i): %3.4f' % (mapi2t, mapt2i))
+    print('   Test MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}'.format(mapi2t, mapt2i))
 
 
 def generate_img_code(model, test_dataloader, num, FEATURE_MAP):
