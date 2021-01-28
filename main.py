@@ -17,6 +17,7 @@ import pickle
 
 
 def train(**kwargs):
+    since = time.time()
     opt.parse(kwargs)
 
     if opt.vis_env:
@@ -222,22 +223,19 @@ def train(**kwargs):
         e_losses['sum'] = sum(e_losses.values())
         losses.append(e_losses)
 
-        # TODO fix update code below
-
         CODE_MAP = update_code_map(U, V, CODE_MAP, train_labels)
         FEATURE_MAP = update_feature_map(FEATURE_I, FEATURE_T, train_labels)
 
-        print('...epoch: %3d, loss: %3.3f' % (epoch + 1, loss[-1]))
         delta_t = time.time() - t1
+        print('Epoch: {:4d}/{:4d}, time, {:3.3f}s, loss: {:15.3f},'.format(epoch + 1, opt.max_epoch, delta_t, loss[-1]) + 5 * ' ' + 'losses:', e_losses)
 
         if opt.vis_env:
             vis.plot('loss', loss[-1])
 
         # validate
         if opt.valid and (epoch + 1) % opt.valid_freq == 0:
-            mapi2t, mapt2i = valid(model, x_query_dataloader, x_db_dataloader, y_query_dataloader, y_db_dataloader,
-                                   query_labels, db_labels, FEATURE_MAP)
-            print('...epoch: %3d, valid MAP: MAP(i->t): %3.4f, MAP(t->i): %3.4f' % (epoch + 1, mapi2t, mapt2i))
+            mapi2t, mapt2i = valid(model, x_query_dataloader, x_db_dataloader, y_query_dataloader, y_db_dataloader, query_labels, db_labels, FEATURE_MAP)
+            print('Epoch: {:4d}/{:4d}, validation MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}'.format(epoch + 1, opt.max_epoch, mapi2t, mapt2i))
 
             mapi2t_list.append(mapi2t)
             mapt2i_list.append(mapt2i)
@@ -254,7 +252,7 @@ def train(**kwargs):
                 max_mapi2t = mapi2t
                 max_mapt2i = mapt2i
                 save_model(model)
-                path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit)
+                path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
                 with torch.cuda.device(opt.device):
                     torch.save(FEATURE_MAP, os.path.join(path, 'feature_map.pth'))
 
@@ -265,15 +263,16 @@ def train(**kwargs):
     if not opt.valid:
         save_model(model)
 
-    print('...training procedure finish')
+    time_elapsed = time.time() - since
+    print('\n   Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     if opt.valid:
-        print('   max MAP: MAP(i->t): %3.4f, MAP(t->i): %3.4f' % (max_mapi2t, max_mapt2i))
+        print('   Max MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}'.format(max_mapi2t, max_mapt2i))
     else:
         mapi2t, mapt2i = valid(model, x_query_dataloader, x_db_dataloader, y_query_dataloader, y_db_dataloader,
                                query_labels, db_labels, FEATURE_MAP)
-        print('   max MAP: MAP(i->t): %3.4f, MAP(t->i): %3.4f' % (mapi2t, mapt2i))
+        print('   Max MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}'.format(mapi2t, mapt2i))
 
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit)
+    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     with open(os.path.join(path, 'result.pkl'), 'wb') as f:
         pickle.dump([train_times, mapi2t_list, mapt2i_list], f)
 
@@ -341,7 +340,7 @@ def test(**kwargs):
     model = AGAH(opt.bit, opt.tag_dim, opt.num_label, opt.emb_dim,
                 lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
 
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit)
+    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     load_model(model, path)
     FEATURE_MAP = torch.load(os.path.join(path, 'feature_map.pth')).to(opt.device)
 
@@ -375,7 +374,7 @@ def test(**kwargs):
     pk_i2t = p_topK(qBX, rBY, query_labels, db_labels, K)
     pk_t2i = p_topK(qBY, rBX, query_labels, db_labels, K)
 
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit)
+    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     np.save(os.path.join(path, 'P_i2t.npy'), p_i2t.numpy())
     np.save(os.path.join(path, 'R_i2t.npy'), r_i2t.numpy())
     np.save(os.path.join(path, 'P_t2i.npy'), p_t2i.numpy())
@@ -391,7 +390,8 @@ def test(**kwargs):
 def generate_img_code(model, test_dataloader, num, FEATURE_MAP):
     B = torch.zeros(num, opt.bit).to(opt.device)
 
-    for i, input_data in tqdm(enumerate(test_dataloader)):
+    # for i, input_data in tqdm(enumerate(test_dataloader)):
+    for i, input_data in enumerate(test_dataloader):
         input_data = input_data.to(opt.device)
         b = model.generate_img_code(input_data, FEATURE_MAP)
         idx_end = min(num, (i + 1) * opt.batch_size)
@@ -404,7 +404,8 @@ def generate_img_code(model, test_dataloader, num, FEATURE_MAP):
 def generate_txt_code(model, test_dataloader, num, FEATURE_MAP):
     B = torch.zeros(num, opt.bit).to(opt.device)
 
-    for i, input_data in tqdm(enumerate(test_dataloader)):
+    # for i, input_data in tqdm(enumerate(test_dataloader)):
+    for i, input_data in enumerate(test_dataloader):
         input_data = input_data.to(opt.device)
         b = model.generate_txt_code(input_data, FEATURE_MAP)
         idx_end = min(num, (i + 1) * opt.batch_size)
@@ -431,7 +432,7 @@ def load_model(model, path):
 
 
 def save_model(model):
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit)
+    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
     model.save(model.module_name + '.pth', path, cuda_device=opt.device)
 
 

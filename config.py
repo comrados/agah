@@ -48,7 +48,7 @@ class DefaultConfig(object):
     bit = 64  # final binary code length
     lr = 0.0001  # initial learning rate
 
-    device = 'cpu'  # 'cuda:0'  # if `device` is not None then use cpu for default
+    device = 'cuda:0'  # 'cuda:0'  # if `device` is not None then use cpu for default
 
     # hyper-parameters
     alpha = 1
