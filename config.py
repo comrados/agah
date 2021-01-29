@@ -37,7 +37,7 @@ class DefaultConfig(object):
     # tag_dim = 1000
     # query_size = 2100
 
-    training_size = 9450
+    training_size = 7350
     batch_size = 128
     hidden_dim = 2048
     emb_dim = hidden_dim // 4
@@ -46,7 +46,7 @@ class DefaultConfig(object):
     valid_freq = 1
     max_epoch = 100
 
-    bit = 32  # final binary code length
+    bit = 128  # final binary code length
     lr = 0.0001  # initial learning rate
 
     device = 'cuda:0'  # 'cuda:0'  # if `device` is not None then use cpu for default
