@@ -14,9 +14,9 @@ class DefaultConfig(object):
     # for ucm dataset
     flag = 'ucm'
     dataset = 'ucm'
-    data_path = './data/dataset_UCM_with_embeddings_reduced.h5'
+    data_path = './data/dataset_UCM_multi_label.h5'
     db_size = 9450
-    num_label = 21
+    num_label = 17
     tag_dim = 266
     img_dim = 4096
     query_size = 1050
@@ -46,7 +46,7 @@ class DefaultConfig(object):
     valid_freq = 1
     max_epoch = 100
 
-    bit = 128  # final binary code length
+    bit = 64  # final binary code length
     lr = 0.0001  # initial learning rate
 
     device = 'cuda:0'  # 'cuda:0'  # if `device` is not None then use cpu for default
