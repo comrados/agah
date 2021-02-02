@@ -14,7 +14,7 @@ class DefaultConfig(object):
     # for ucm dataset
     flag = 'ucm'
     dataset = 'ucm'
-    data_path = './data/dataset_UCM_multi_label.h5'
+    data_path = './data/resnet18_UCM_multi_label.h5'
     db_size = 9450
     num_label = 17
     tag_dim = 266
@@ -79,6 +79,8 @@ class DefaultConfig(object):
                 self.device = v
             if k == 'flag':
                 self.flag = v
+            if k == 'bit':
+                self.bit = int(v)
             if not hasattr(self, k):
                 warnings.warn("Waning: opt has no attribute %s" % k)
             setattr(self, k, v)
