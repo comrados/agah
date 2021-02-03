@@ -3,6 +3,7 @@ from PIL import Image
 import numpy as np
 import visdom
 import time
+import pickle
 
 
 def calc_hamming_dist(B1, B2):
@@ -92,6 +93,11 @@ def p_topK(qB, rB, query_label, retrieval_label, K):
     return p
 
 
+def write_pickle(path, data):
+    with open(path, 'wb') as f:
+        pickle.dump(data, f)
+
+
 class Visualizer(object):
     """
     封装了visdom的基本操作，但是你仍然可以通过`self.vis.function`
@@ -177,15 +183,15 @@ if __name__ == '__main__':
                        [-1, 1, -1, -1],
                        [1, 1, -1, 1]])
     query_labels = torch.Tensor([[0, 1, 0, 0],
-                            [1, 1, 0, 0],
-                            [1, 0, 0, 1],
-                            [0, 1, 0, 1]])
+                                 [1, 1, 0, 0],
+                                 [1, 0, 0, 1],
+                                 [0, 1, 0, 1]])
     retrieval_labels = torch.Tensor([[1, 0, 0, 1],
-                                [1, 1, 0, 0],
-                                [0, 1, 1, 0],
-                                [0, 0, 1, 0],
-                                [1, 0, 0, 0],
-                                [0, 0, 1, 0]])
+                                     [1, 1, 0, 0],
+                                     [0, 1, 1, 0],
+                                     [0, 0, 1, 0],
+                                     [1, 0, 0, 0],
+                                     [0, 0, 1, 0]])
 
     # query_labels = torch.Tensor([[0, 1, 0, 0],
     #                              [1, 0, 0, 0],

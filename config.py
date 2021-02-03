@@ -44,7 +44,7 @@ class DefaultConfig(object):
 
     valid = True  # whether to use validation
     valid_freq = 1
-    max_epoch = 100
+    max_epoch = 5
 
     bit = 64  # final binary code length
     lr = 0.0001  # initial learning rate
@@ -88,7 +88,7 @@ class DefaultConfig(object):
         print('Configuration:')
         for k, v in self.__class__.__dict__.items():
             if not k.startswith('__') and str(k) != 'parse':
-                    print('\t{0}: {1}'.format(k, getattr(self, k)))
+                print('\t{0}: {1}'.format(k, getattr(self, k)))
 
 
 opt = DefaultConfig()
