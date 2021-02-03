@@ -44,7 +44,7 @@ class DefaultConfig(object):
 
     valid = True  # whether to use validation
     valid_freq = 1
-    max_epoch = 5
+    max_epoch = 100
 
     bit = 64  # final binary code length
     lr = 0.0001  # initial learning rate
