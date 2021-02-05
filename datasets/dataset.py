@@ -38,10 +38,14 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, opt, images, tags, labels, test=None):
         self.test = test
         all_index = np.arange(tags.shape[0])
-        if opt.flag == 'ucm':
+        if opt.flag == 'ucm_':
             query_index = sample_ucm_query(seed=42)  # select 50 out of 500 elements for each of 21 classes
             db_index = list(set(range(len(images))) - set(query_index))
             training_index = sample_ucm_train(db_index, seed=42)
+        elif opt.flag == 'ucm':
+            query_index = all_index[opt.db_size:]
+            training_index = all_index[:opt.training_size]
+            db_index = all_index[:opt.db_size]
         elif opt.flag == 'mir':
             query_index = all_index[opt.db_size:]
             training_index = all_index[:opt.training_size]

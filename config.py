@@ -14,10 +14,10 @@ class DefaultConfig(object):
     # for ucm dataset
     flag = 'ucm'
     dataset = 'ucm'
-    data_path = './data/resnet18_UCM_multi_label.h5'
+    data_path = './data/UCM_resnet18_bert_sum_12.h5'
     db_size = 9450
     num_label = 17
-    tag_dim = 266
+    tag_dim = 768
     img_dim = 4096
     query_size = 1050
 

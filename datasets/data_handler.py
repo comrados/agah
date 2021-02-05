@@ -60,9 +60,14 @@ def load_ucm(path):
         images = hf['images'][:]
         images = (images - images.mean()) / images.std()
         labels = hf['labels'][:]
-        tags = hf['bow'][:]
+        tags = hf['bow'][:]  # embeddings
+        tags = (tags - tags.mean()) / tags.std()
         images = duplicate_data(images, 5)  # 5 times more captions than images
         labels = duplicate_data(labels, 5)  # 5 times more captions than labels
+        perm = np.random.permutation(len(images))
+        images = images[perm]
+        labels = labels[perm]
+        tags = tags[perm]
     return images, tags, labels
 
 
