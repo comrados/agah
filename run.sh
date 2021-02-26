@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -o /home/users/m/mikriukov/projects/agah/out_gpu.log
-#SBATCH -J dadh
+#SBATCH -J agah
 #SBATCH --ntasks=2
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
