@@ -4,6 +4,7 @@ import numpy as np
 import visdom
 import time
 import pickle
+from tqdm import tqdm
 
 
 def calc_hamming_dist(B1, B2):
@@ -15,19 +16,16 @@ def calc_hamming_dist(B1, B2):
 
 
 def calc_map_k(qB, rB, query_label, retrieval_label, k=None):
-    # qB: {-1,+1}^{mxq}
-    # rB: {-1,+1}^{nxq}
-    # sim: {0, 1}^{mxn}
     num_query = query_label.shape[0]
     map = 0.
     if k is None:
         k = retrieval_label.shape[0]
-    for iter in range(num_query):
-        gnd = (query_label[iter].unsqueeze(0).mm(retrieval_label.t()) > 0).type(torch.float).squeeze()
+    for i in range(num_query):
+        gnd = (query_label[i].unsqueeze(0).mm(retrieval_label.t()) > 0).type(torch.float).squeeze()
         tsum = torch.sum(gnd)
         if tsum == 0:
             continue
-        hamm = calc_hamming_dist(qB[iter, :], rB)
+        hamm = calc_hamming_dist(qB[i, :], rB)
         _, ind = torch.sort(hamm)
         ind.squeeze_()
         gnd = gnd[ind]
@@ -48,49 +46,84 @@ def image_from_numpy(x):
     im.show()
 
 
-def pr_curve(qB, rB, query_label, retrieval_label):
-    num_query = qB.shape[0]
-    num_bit = qB.shape[1]
-    P = torch.zeros(num_query, num_bit + 1)
-    R = torch.zeros(num_query, num_bit + 1)
-    for i in range(num_query):
+def pr_curve(qB, rB, query_label, retrieval_label, tqdm_label=''):
+    if tqdm_label != '':
+        tqdm_label = 'PR-curve ' + tqdm_label
+
+    num_query = qB.shape[0]  # length of query (each sample from query compared to retrieval samples)
+    num_bit = qB.shape[1]  # length of hash code
+    P = torch.zeros(num_query, num_bit + 1)  # precisions (for each sample)
+    R = torch.zeros(num_query, num_bit + 1)  # recalls (for each sample)
+
+    # for each sample from query calculate precision and recall
+    for i in tqdm(range(num_query), desc=tqdm_label):
+        # gnd[j] == 1 if same class, otherwise 0, ground truth
         gnd = (query_label[i].unsqueeze(0).mm(retrieval_label.t()) > 0).float().squeeze()
+        # tsum (TP + FN): total number of samples of the same class
         tsum = torch.sum(gnd)
         if tsum == 0:
             continue
-        hamm = calc_hamming_dist(qB[i, :], rB)
+        hamm = calc_hamming_dist(qB[i, :], rB)  # hamming distances from qB[i, :] (current query sample) to retrieval samples
+        # tmp[k,j] == 1 if hamming distance to retrieval sample j is less or equal to k (distance), 0 otherwise
         tmp = (hamm <= torch.arange(0, num_bit + 1).reshape(-1, 1).float().to(hamm.device)).float()
+        # total (TP + FP): total[k] is count of distances less or equal to k (from current query sample to retrieval samples)
         total = tmp.sum(dim=-1)
-        total = total + (total == 0).float() * 0.1
+        total = total + (total == 0).float() * 0.0001  # replace zeros with 0.1 to avoid division by zero
+        # select only same class samples from tmp (ground truth masking, only rows where gnd == 1 proceed further)
         t = gnd * tmp
+        # count (TP): number of true (correctly selected) samples of the same class for any given distance k
         count = t.sum(dim=-1)
-        p = count / total
-        r = count / tsum
+        p = count / total  # TP / (TP + FP)
+        r = count / tsum  # TP / (TP + FN)
         P[i] = p
         R[i] = r
-    mask = (P > 0).float().sum(dim=0)
-    mask = mask + (mask == 0).float() * 0.1
-    P = P.sum(dim=0) / mask
-    R = R.sum(dim=0) / mask
+    # mask to calculate P mean value (among all query samples)
+    #mask = (P > 0).float().sum(dim=0)
+    #mask = mask + (mask == 0).float() * 0.001
+    #P = P.sum(dim=0) / mask
+    # mask to calculate R mean value (among all query samples)
+    #mask = (R > 0).float().sum(dim=0)
+    #mask = mask + (mask == 0).float() * 0.001
+    #R = R.sum(dim=0) / mask
+    P = P.mean(dim=0)
+    R = R.mean(dim=0)
     return P, R
 
 
-def p_topK(qB, rB, query_label, retrieval_label, K):
-    num_query = query_label.shape[0]
-    p = [0] * len(K)
-    for iter in range(num_query):
-        gnd = (query_label[iter].unsqueeze(0).mm(retrieval_label.t()) > 0).float().squeeze()
-        tsum = torch.sum(gnd)
-        if tsum == 0:
+def p_top_k(qB, rB, query_label, retrieval_label, K, tqdm_label=''):
+    if tqdm_label != '':
+        tqdm_label = 'AP@K ' + tqdm_label
+
+    num_query = qB.shape[0]
+    PK = torch.zeros(len(K)).to(qB.device)
+
+    for i in tqdm(range(num_query), desc=tqdm_label):
+        # ground_truth[j] == 1 if same class (if at least 1 same label), otherwise 0, ground truth
+        ground_truth = (query_label[i].unsqueeze(0).mm(retrieval_label.t()) > 0).float().squeeze()
+        # count of samples, that shall be retrieved
+        tp_fn = ground_truth.sum()
+        if tp_fn == 0:
             continue
-        hamm = calc_hamming_dist(qB[iter, :], rB).squeeze()
-        for i in range(len(K)):
-            total = min(K[i], retrieval_label.shape[0])
-            ind = torch.sort(hamm)[1][:total]
-            gnd_ = gnd[ind]
-            p[i] += gnd_.sum() / total
-    p = torch.Tensor(p) / num_query
-    return p
+
+        hamm_dist = calc_hamming_dist(qB[i, :], rB).squeeze()
+
+        # for each k in K
+        for j, k in enumerate(K):
+            k = min(k, retrieval_label.shape[0])
+            _, sorted_indexes = torch.sort(hamm_dist)
+            retrieved_indexes = sorted_indexes[:k]
+            retrieved_samples = ground_truth[retrieved_indexes]
+            PK[j] += retrieved_samples.sum() / k
+
+    PK = PK / num_query
+
+    """
+    import matplotlib.pyplot as plt
+    plt.semilogx(K, PK)
+    plt.savefig('/home/george/Downloads/_fig.png')
+    """
+
+    return PK
 
 
 def write_pickle(path, data):

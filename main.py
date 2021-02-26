@@ -10,7 +10,7 @@ from datasets.dataset import Dataset
 from config import opt
 from models import *
 from torch.optim import Adamax
-from utils import calc_map_k, pr_curve, p_topK, Visualizer, write_pickle
+from utils import calc_map_k, pr_curve, p_top_k, Visualizer, write_pickle
 from datasets.data_handler import load_data, load_pretrain_model
 import time
 import pickle
@@ -270,7 +270,7 @@ def train(**kwargs):
                 with torch.cuda.device(opt.device):
                     torch.save([CODE_MAP, U, V], os.path.join(path, 'code_maps_cm_u_v.pth'))
 
-        if epoch % 50 == 0:
+        if epoch % 40 == 0:
             for params in optimizer.param_groups:
                 params['lr'] = max(params['lr'] * 0.6, 1e-6)
 
@@ -356,76 +356,77 @@ def test(**kwargs):
     else:
         opt.device = torch.device('cpu')
 
-    # pretrain_model = load_pretrain_model(opt.pretrain_model_path)
-    pretrain_model = None
+    with torch.no_grad():
+        # pretrain_model = load_pretrain_model(opt.pretrain_model_path)
+        pretrain_model = None
 
-    model = AGAH(opt.bit, opt.img_dim, opt.tag_dim, opt.num_label, opt.emb_dim, opt.hidden_dim, lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
+        model = AGAH(opt.bit, opt.img_dim, opt.tag_dim, opt.num_label, opt.emb_dim, opt.hidden_dim, lambd=opt.lambd, pretrain_model=pretrain_model).to(opt.device)
 
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
-    load_model(model, path)
-    FEATURE_MAP = torch.load(os.path.join(path, 'feature_maps_fm_i_t.pth'))[0].to(opt.device)
+        path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
+        load_model(model, path)
+        FEATURE_MAP = torch.load(os.path.join(path, 'feature_maps_fm_i_t.pth'))[0].to(opt.device)
 
-    model.eval()
+        model.eval()
 
-    images, tags, labels = load_data(opt.data_path, opt.dataset)
+        images, tags, labels = load_data(opt.data_path, opt.dataset)
 
-    x_query_data = Dataset(opt, images, tags, labels, test='image.query')
-    x_db_data = Dataset(opt, images, tags, labels, test='image.db')
-    y_query_data = Dataset(opt, images, tags, labels, test='text.query')
-    y_db_data = Dataset(opt, images, tags, labels, test='text.db')
+        x_query_data = Dataset(opt, images, tags, labels, test='image.query')
+        x_db_data = Dataset(opt, images, tags, labels, test='image.db')
+        y_query_data = Dataset(opt, images, tags, labels, test='text.query')
+        y_db_data = Dataset(opt, images, tags, labels, test='text.db')
 
-    x_query_dataloader = DataLoader(x_query_data, opt.batch_size, shuffle=False)
-    x_db_dataloader = DataLoader(x_db_data, opt.batch_size, shuffle=False)
-    y_query_dataloader = DataLoader(y_query_data, opt.batch_size, shuffle=False)
-    y_db_dataloader = DataLoader(y_db_data, opt.batch_size, shuffle=False)
+        x_query_dataloader = DataLoader(x_query_data, opt.batch_size, shuffle=False)
+        x_db_dataloader = DataLoader(x_db_data, opt.batch_size, shuffle=False)
+        y_query_dataloader = DataLoader(y_query_data, opt.batch_size, shuffle=False)
+        y_db_dataloader = DataLoader(y_db_data, opt.batch_size, shuffle=False)
 
-    qBX = generate_img_code(model, x_query_dataloader, opt.query_size, FEATURE_MAP)
-    qBY = generate_txt_code(model, y_query_dataloader, opt.query_size, FEATURE_MAP)
-    rBX = generate_img_code(model, x_db_dataloader, opt.db_size, FEATURE_MAP)
-    rBY = generate_txt_code(model, y_db_dataloader, opt.db_size, FEATURE_MAP)
+        qBX = generate_img_code(model, x_query_dataloader, opt.query_size, FEATURE_MAP)
+        qBY = generate_txt_code(model, y_query_dataloader, opt.query_size, FEATURE_MAP)
+        rBX = generate_img_code(model, x_db_dataloader, opt.db_size, FEATURE_MAP)
+        rBY = generate_txt_code(model, y_db_dataloader, opt.db_size, FEATURE_MAP)
 
-    query_labels, db_labels = x_query_data.get_labels()
-    query_labels = query_labels.to(opt.device)
-    db_labels = db_labels.to(opt.device)
+        query_labels, db_labels = x_query_data.get_labels()
+        query_labels = query_labels.to(opt.device)
+        db_labels = db_labels.to(opt.device)
 
-    p_i2t, r_i2t = pr_curve(qBX, rBY, query_labels, db_labels)
-    p_t2i, r_t2i = pr_curve(qBY, rBX, query_labels, db_labels)
-    p_i2i, r_i2i = pr_curve(qBX, rBX, query_labels, db_labels)
-    p_t2t, r_t2t = pr_curve(qBY, rBY, query_labels, db_labels)
+        p_i2t, r_i2t = pr_curve(qBX, rBY, query_labels, db_labels, tqdm_label='I2T')
+        p_t2i, r_t2i = pr_curve(qBY, rBX, query_labels, db_labels, tqdm_label='T2I')
+        p_i2i, r_i2i = pr_curve(qBX, rBX, query_labels, db_labels, tqdm_label='I2I')
+        p_t2t, r_t2t = pr_curve(qBY, rBY, query_labels, db_labels, tqdm_label='T2T')
 
-    K = [1, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-    pk_i2t = p_topK(qBX, rBY, query_labels, db_labels, K)
-    pk_t2i = p_topK(qBY, rBX, query_labels, db_labels, K)
-    pk_i2i = p_topK(qBX, rBX, query_labels, db_labels, K)
-    pk_t2t = p_topK(qBY, rBY, query_labels, db_labels, K)
+        K = [1, 10, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
+        pk_i2t = p_top_k(qBX, rBY, query_labels, db_labels, K, tqdm_label='I2T')
+        pk_t2i = p_top_k(qBY, rBX, query_labels, db_labels, K, tqdm_label='T2I')
+        pk_i2i = p_top_k(qBX, rBX, query_labels, db_labels, K, tqdm_label='I2I')
+        pk_t2t = p_top_k(qBY, rBY, query_labels, db_labels, K, tqdm_label='T2T')
 
-    mapi2t = calc_map_k(qBX, rBY, query_labels, db_labels)
-    mapt2i = calc_map_k(qBY, rBX, query_labels, db_labels)
-    mapi2i = calc_map_k(qBX, rBX, query_labels, db_labels)
-    mapt2t = calc_map_k(qBY, rBY, query_labels, db_labels)
+        mapi2t = calc_map_k(qBX, rBY, query_labels, db_labels)
+        mapt2i = calc_map_k(qBY, rBX, query_labels, db_labels)
+        mapi2i = calc_map_k(qBX, rBX, query_labels, db_labels)
+        mapt2t = calc_map_k(qBY, rBY, query_labels, db_labels)
 
-    pr_dict = {'pi2t': p_i2t.numpy(), 'ri2t': r_i2t.numpy(),
-               'pt2i': p_t2i.numpy(), 'rt2i': r_t2i.numpy(),
-               'pi2i': p_i2i.numpy(), 'ri2i': r_i2i.numpy(),
-               'pt2t': p_t2t.numpy(), 'rt2t': r_t2t.numpy()}
+        pr_dict = {'pi2t': p_i2t.cpu().numpy(), 'ri2t': r_i2t.cpu().numpy(),
+                   'pt2i': p_t2i.cpu().numpy(), 'rt2i': r_t2i.cpu().numpy(),
+                   'pi2i': p_i2i.cpu().numpy(), 'ri2i': r_i2i.cpu().numpy(),
+                   'pt2t': p_t2t.cpu().numpy(), 'rt2t': r_t2t.cpu().numpy()}
 
-    pk_dict = {'k': K,
-               'pki2t': pk_i2t.numpy(),
-               'pkt2i': pk_t2i.numpy(),
-               'pki2i': pk_i2i.numpy(),
-               'pkt2t': pk_t2t.numpy()}
+        pk_dict = {'k': K,
+                   'pki2t': pk_i2t.cpu().numpy(),
+                   'pkt2i': pk_t2i.cpu().numpy(),
+                   'pki2i': pk_i2i.cpu().numpy(),
+                   'pkt2t': pk_t2t.cpu().numpy()}
 
-    map_dict = {'mapi2t': float(mapi2t.cpu().numpy()),
-                'mapt2i': float(mapt2i.cpu().numpy()),
-                'mapi2i': float(mapi2i.cpu().numpy()),
-                'mapt2t': float(mapt2t.cpu().numpy())}
+        map_dict = {'mapi2t': float(mapi2t.cpu().numpy()),
+                    'mapt2i': float(mapt2i.cpu().numpy()),
+                    'mapi2i': float(mapi2i.cpu().numpy()),
+                    'mapt2t': float(mapt2t.cpu().numpy())}
 
-    print('   Test MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}, MAP(i->i) = {:3.4f}, MAP(t->t) = {:3.4f}'.format(mapi2t, mapt2i, mapi2i, mapt2t))
+        print('   Test MAP: MAP(i->t) = {:3.4f}, MAP(t->i) = {:3.4f}, MAP(i->i) = {:3.4f}, MAP(t->t) = {:3.4f}'.format(mapi2t, mapt2i, mapi2i, mapt2t))
 
-    path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
-    write_pickle(os.path.join(path, 'pr_dict.pkl'), pr_dict)
-    write_pickle(os.path.join(path, 'pk_dict.pkl'), pk_dict)
-    write_pickle(os.path.join(path, 'map_dict.pkl'), map_dict)
+        path = 'checkpoints/' + opt.dataset + '_' + str(opt.bit) + str(opt.proc)
+        write_pickle(os.path.join(path, 'pr_dict.pkl'), pr_dict)
+        write_pickle(os.path.join(path, 'pk_dict.pkl'), pk_dict)
+        write_pickle(os.path.join(path, 'map_dict.pkl'), map_dict)
 
 
 def generate_img_code(model, test_dataloader, num, FEATURE_MAP):
