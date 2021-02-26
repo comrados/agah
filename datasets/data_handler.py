@@ -11,7 +11,7 @@ def preprocess(x, mean, std):
 
 def load_data(path, type='ucm'):
     print('Loading', type)
-    if type == 'ucm':
+    if type == 'ucm' or type == 'rsicd':
         return load_ucm(path)
     elif type == 'flickr25k':
         return load_flickr25k(path)
@@ -57,6 +57,7 @@ def data_enhance(images, tags, labels, c=0.5):
 
 def load_ucm(path):
     with h5py.File(path, "r") as hf:
+        np.random.seed(42)
         images = hf['images'][:]
         images = (images - images.mean()) / images.std()
         labels = hf['labels'][:]
